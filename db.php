@@ -2,6 +2,21 @@
 
 function env_value(string $key, string $default = ''): string
 {
+    // 1. Prioritize Azure environment variables
+    $env = getenv($key);
+    if ($env !== false && $env !== '') {
+        return $env;
+    }
+
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') {
+        return (string)$_ENV[$key];
+    }
+
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') {
+        return (string)$_SERVER[$key];
+    }
+
+    // 2. Fall back to local .env file (for local development)
     static $values;
     if ($values === null) {
         $values = [];
@@ -16,7 +31,8 @@ function env_value(string $key, string $default = ''): string
             }
         }
     }
-    return $values[$key] ?? getenv($key) ?: $default;
+
+    return $values[$key] ?? $default;
 }
 
 try {
