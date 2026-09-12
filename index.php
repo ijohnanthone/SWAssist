@@ -270,18 +270,28 @@ if ($page === 'report') {
 	</article><?php render_footer(); if ($isReportDownload) {
 		$html = ob_get_clean();
 		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study';
+		$document = new DOMDocument();
+		@$document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+		$report = $document->getElementsByTagName('article')->item(0);
+		$reportMarkup = $report ? $document->saveHTML($report) : $html;
+		$stylesheet = file_get_contents(__DIR__ . '/assets/css/app.css');
+		$sealPath = __DIR__ . '/assets/images/psu-seal-source.png';
+		$sealMarkup = '<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">';
+		if (is_file($sealPath)) {
+			$sealMarkup = '<img src="data:image/png;base64,' . base64_encode((string) file_get_contents($sealPath)) . '" alt="Palawan State University seal">';
+		}
+		$html = '<!doctype html><html><head><meta charset="UTF-8"><style>' . $stylesheet . '</style></head><body>' . $reportMarkup . '</body></html>';
 		if ($reportFormat === 'word') {
-			$stylesheet = file_get_contents(__DIR__ . '/assets/css/app.css');
-			$html = str_replace('<link rel="stylesheet" href="assets/css/app.css">', '<style>' . $stylesheet . '</style>', $html);
+			$html = str_replace('<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">', $sealMarkup, $html);
 			header('Content-Type: application/msword; charset=UTF-8');
 			header('Content-Disposition: attachment; filename="' . $downloadName . '.doc"');
 			echo $html;
 			exit;
 		}
-		$stylesheet = file_get_contents(__DIR__ . '/assets/css/app.css');
-		$html = str_replace('<link rel="stylesheet" href="assets/css/app.css">', '<style>' . $stylesheet . '</style>', $html);
 		if (!extension_loaded('gd')) {
-			$html = str_replace('<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">', '', $html);
+			$html = str_replace([$sealMarkup, '<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">'], '', $html);
+		} else {
+			$html = str_replace('<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">', $sealMarkup, $html);
 		}
 		$dompdfTempDir = sys_get_temp_dir() . '/swassist-dompdf';
 		if (!is_dir($dompdfTempDir)) { mkdir($dompdfTempDir, 0700, true); }
