@@ -69,7 +69,7 @@ $currentUser = user();
 if ($currentUser['role'] === 'admin' && $page === 'dashboard') {
 	redirect('index.php?page=users');
 }
-if ($currentUser['role'] === 'admin' && !in_array($page, ['users', 'user-edit', 'user-reset', 'user-delete', 'admin-password', 'logout'], true)) {
+if ($currentUser['role'] === 'admin' && !in_array($page, ['users', 'user-edit', 'user-profile', 'user-reset', 'user-delete', 'admin-password', 'logout'], true)) {
 	http_response_code(403);
 	exit('Account administrators can only manage accounts.');
 }
@@ -90,6 +90,11 @@ if ($page === 'admin-password') {
 		redirect('index.php?page=admin-password');
 	}
 	render_header('My password'); ?><div class="page-head"><div><p class="eyebrow">Account security</p><h1>My password</h1><p class="muted">Change the administrator password for this account.</p></div></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>New password<input type="password" name="password" minlength="8" required></label><label>Confirm new password<input type="password" name="password_confirmation" minlength="8" required></label><button class="button primary" type="submit">Change password</button></form><?php render_footer(); exit;
+}
+
+if ($page === 'user-profile') {
+	require_role(['admin']);
+	redirect('index.php?page=user-edit&id=' . (int) $currentUser['id']);
 }
 
 if ($page === 'user-edit') {
@@ -115,6 +120,10 @@ if ($page === 'user-edit') {
 		if (!$statement->execute()) {
 			flash('error', $statement->errno === 1062 ? 'That username is already in use.' : 'The account could not be updated.');
 		} else {
+			if ($userId === (int) $currentUser['id']) {
+				$_SESSION['user']['username'] = $username;
+				$_SESSION['user']['full_name'] = $fullName;
+			}
 			flash('success', 'Account updated.');
 		}
 		redirect('index.php?page=users');

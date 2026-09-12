@@ -24,6 +24,7 @@ function render_header(string $title): void
             <nav>
                 <?php if ($currentUser['role'] === 'admin'): ?>
                     <a class="<?= $isActive(['users', 'user-edit']) ?>" aria-current="<?= in_array($activePage, ['users', 'user-edit'], true) ? 'page' : 'false' ?>" href="index.php?page=users">Accounts</a>
+                    <a class="<?= $isActive(['user-profile']) ?>" aria-current="<?= $activePage === 'user-profile' ? 'page' : 'false' ?>" href="index.php?page=user-profile">My profile</a>
                     <a class="<?= $isActive(['admin-password']) ?>" aria-current="<?= $activePage === 'admin-password' ? 'page' : 'false' ?>" href="index.php?page=admin-password">My password</a>
                 <?php else: ?>
                     <a class="<?= $isActive(['dashboard']) ?>" aria-current="<?= $activePage === 'dashboard' ? 'page' : 'false' ?>" href="index.php">Dashboard</a>
