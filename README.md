@@ -6,8 +6,10 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 
 - Session login, password hashing, registration, roles, CSRF protection, and case ownership checks
 - Case creation, editing, archive status, search, filtering, and dashboard statistics
+- Automatically generated stable Case IDs in the `SW-YYYY-NNN` format
 - Seven-section Social Case Study Report editor with repeatable family and treatment-plan rows
 - Activity/progress log linked to each case
+- Supervisor case list includes the assigned student and case-study preparer
 - Print-friendly report preview
 - DOCX report downloads generated from the original `reference/SCSR-Format (1).docx` template
 - Account administrator controls for editing, resetting, and removing user accounts
@@ -50,6 +52,8 @@ The QR preview uses the public QR Server image endpoint, so users should avoid p
 The application intentionally uses a small front controller (`index.php`), shared procedural helpers, mysqli prepared statements, and no framework. The case-study editor is separated into `case-study.php`; the normalized schema keeps family members and treatment rows out of the main case record.
 
 Word report downloads copy the authoritative DOCX template, replace its sample text and table rows with the saved case data, and preserve the template's Word formatting.
+
+New cases receive a permanent system-generated ID such as `SW-2026-001`. The ID is independent of user names and remains unchanged if a case is reassigned or an account name changes. Existing manually created Case IDs are preserved.
 
 The `admin` role is restricted to account management. Administrators can edit account details, reset passwords, remove eligible accounts, and change their own password, but cannot access case, activity, QR, or report routes. Supervisors and students retain case-management access.
 
