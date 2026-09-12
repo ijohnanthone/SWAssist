@@ -227,6 +227,9 @@ if ($page === 'report') {
 		require_once $autoload;
 		ob_start();
 	} elseif ($isReportDownload && $reportFormat === 'word') {
+		$autoload = __DIR__ . '/vendor/autoload.php';
+		if (!is_file($autoload)) { http_response_code(503); exit('Word support is not installed.'); }
+		require_once $autoload;
 		ob_start();
 	}
 	render_header('Report preview'); ?>
@@ -282,10 +285,75 @@ if ($page === 'report') {
 		}
 		$html = '<!doctype html><html><head><meta charset="UTF-8"><style>' . $stylesheet . '</style></head><body>' . $reportMarkup . '</body></html>';
 		if ($reportFormat === 'word') {
-			$html = str_replace('<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">', $sealMarkup, $html);
-			header('Content-Type: application/msword; charset=UTF-8');
-			header('Content-Disposition: attachment; filename="' . $downloadName . '.doc"');
-			echo $html;
+			$word = new PhpOffice\PhpWord\PhpWord();
+			$word->setDefaultFontName('Times New Roman');
+			$word->setDefaultFontSize(12);
+			$section = $word->addSection(['pageSizeW' => 12240, 'pageSizeH' => 15840, 'marginTop' => 1080, 'marginRight' => 1080, 'marginBottom' => 1080, 'marginLeft' => 1080]);
+			$center = ['alignment' => PhpOffice\PhpWord\SimpleType\Jc::CENTER];
+			$right = ['alignment' => PhpOffice\PhpWord\SimpleType\Jc::RIGHT];
+			$bold = ['bold' => true];
+			$headerTable = $section->addTable(['borderSize' => 0, 'cellMargin' => 0]);
+			$headerTable->addRow();
+			$logoCell = $headerTable->addCell(1800);
+			if (is_file($sealPath)) { $logoCell->addImage($sealPath, ['width' => 76, 'height' => 99, 'alignment' => PhpOffice\PhpWord\SimpleType\Jc::CENTER]); }
+			$institutionCell = $headerTable->addCell(7560);
+			$institutionCell->addText('Palawan State University', ['bold' => true, 'size' => 14], $center);
+			$institutionCell->addText('College of Arts and Humanities', null, $center);
+			$institutionCell->addText('Bachelor of Science in Social Work Program', null, $center);
+			$institutionCell->addText('Tiniguiban Heights, Puerto Princesa City', null, $center);
+			$section->addTextBreak(1);
+			$section->addText('SOCIAL CASE STUDY REPORT', ['bold' => true, 'size' => 14], $center);
+			$section->addText('Date: ' . date('F j, Y'), ['bold' => true, 'underline' => 'single'], $right);
+			$section->addTextBreak(1);
+			$section->addText('I. IDENTIFYING INFORMATION', $bold);
+			$detailsTable = $section->addTable(['borderSize' => 0, 'cellMargin' => 0]);
+			foreach (['Name' => (string) $case['client_name'], 'Age' => (string) ($case['age'] ?? ''), 'Sex' => (string) ($case['sex'] ?? ''), 'Civil Status' => (string) ($case['civil_status'] ?? ''), 'Religious affiliation' => (string) ($case['religious_affiliation'] ?? ''), 'Date of Birth' => $formatDate($case['date_of_birth'] ?? ''), 'Place of Birth' => (string) ($case['place_of_birth'] ?? ''), 'Highest Educational Attainment' => (string) ($case['education'] ?? ''), 'Occupation' => (string) ($case['occupation'] ?? ''), 'Monthly Income' => $formatIncome($case['monthly_income'] ?? ''), 'Present address' => (string) ($case['present_address'] ?? ''), 'Home address' => (string) ($case['home_address'] ?? '')] as $label => $value) {
+				$detailsTable->addRow();
+				$detailsTable->addCell(3000)->addText($label);
+				$detailsTable->addCell(300)->addText(':');
+				$detailsTable->addCell(6060)->addText($value);
+			}
+			$section->addTextBreak(1);
+			$section->addText('II. FAMILY COMPOSITION', $bold);
+			$familyTable = $section->addTable(['borderSize' => 6, 'borderColor' => '000000', 'cellMargin' => 60]);
+			$familyHeaders = ['Name', 'Relationship to client', 'Age', 'Birthday', 'Education', 'Occupation', 'Civil Status', 'Monthly Income'];
+			$familyTable->addRow();
+			foreach ($familyHeaders as $header) { $familyTable->addCell()->addText($header, $bold, $center); }
+			while ($row = $family->fetch_assoc()) {
+				$familyTable->addRow();
+				foreach ([(string) $row['name'], (string) $row['relationship'], (string) $row['age'], $formatDate($row['birthday']), (string) $row['education'], (string) $row['occupation'], (string) $row['civil_status'], $formatIncome($row['monthly_income'])] as $value) { $familyTable->addCell()->addText($value); }
+			}
+			$section->addTextBreak(1);
+			foreach ([['III. PRESENTING PROBLEM', $study['presenting_problem'] ?? ''], ['IV. BACKGROUND INFORMATION - A. The Client', $study['background_client'] ?? ''], ['IV. BACKGROUND INFORMATION - B. The Family', $study['background_family'] ?? ''], ['IV. BACKGROUND INFORMATION - C. The Environment', $study['background_environment'] ?? ''], ['V. ASSESSMENT STATEMENT', $study['assessment'] ?? '']] as [$heading, $content]) {
+				$section->addText($heading, $bold);
+				$section->addText((string) $content);
+				$section->addTextBreak(1);
+			}
+			$section->addText('VI. TREATMENT PLAN', $bold);
+			$section->addText('Goal: ' . (string) ($study['goal'] ?? ''));
+			$planTable = $section->addTable(['borderSize' => 6, 'borderColor' => '000000', 'cellMargin' => 60]);
+			$planTable->addRow();
+			foreach (['Problem/s', 'Objective/s', 'Activities', 'Responsible', 'Time frame', 'Expected output'] as $header) { $planTable->addCell()->addText($header, $bold, $center); }
+			while ($row = $plans->fetch_assoc()) {
+				$planTable->addRow();
+				foreach ([(string) $row['problems'], (string) $row['objectives'], (string) $row['activities'], (string) $row['responsible_person'], (string) $row['time_frame'], (string) $row['expected_output']] as $value) { $planTable->addCell()->addText($value); }
+			}
+			$section->addTextBreak(1);
+			$section->addText('VII. EVALUATION AND RECOMMENDATION', $bold);
+			$section->addText((string) ($study['evaluation_recommendation'] ?? ''));
+			$section->addTextBreak(2);
+			$signatureTable = $section->addTable(['borderSize' => 0]);
+			$signatureTable->addRow();
+			$signatureTable->addCell(4680)->addText("Prepared by:\n" . ($study['prepared_signature'] ?: ($study['prepared_by'] ?? '')) . "\nName & Signature of SW");
+			$signatureTable->addCell(4680)->addText("Noted by:\n" . ($study['noted_signature'] ?: ($study['noted_by'] ?? '')) . "\nSubject Instructor");
+			$tempDocx = tempnam(sys_get_temp_dir(), 'swassist-docx-');
+			$writer = PhpOffice\PhpWord\IOFactory::createWriter($word, 'Word2007');
+			$writer->save($tempDocx);
+			header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+			header('Content-Disposition: attachment; filename="' . $downloadName . '.docx"');
+			header('Content-Length: ' . filesize($tempDocx));
+			readfile($tempDocx);
+			unlink($tempDocx);
 			exit;
 		}
 		if (!extension_loaded('gd')) {
