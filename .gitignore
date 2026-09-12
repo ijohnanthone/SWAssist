@@ -6,4 +6,5 @@
 *.db
 /uploads/*
 !/uploads/.gitkeep
-reference/
+reference/*
+!reference/SCSR-Format (1).docx
