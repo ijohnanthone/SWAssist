@@ -9,8 +9,6 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 - Seven-section Social Case Study Report editor with repeatable family and treatment-plan rows
 - Activity/progress log linked to each case
 - Print-friendly report preview
-- Case list previews available by hover, keyboard focus, or mobile tap
-- Downloadable HTML case-study reports from the case list
 - QR utility for survey URLs without storing URLs
 - Prepared statements, output escaping, ignored environment credentials, and normalized tables
 
