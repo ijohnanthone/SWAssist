@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/layout.php';
+require_once __DIR__ . '/includes/report-template.php';
 
 $page = $_GET['page'] ?? 'dashboard';
 
@@ -221,16 +222,27 @@ if ($page === 'report') {
 	$formatIncome = static function ($value): string { return $value !== null && $value !== '' ? number_format((float) $value, 2) : ''; };
 	$isReportDownload = ($_GET['download'] ?? '') === '1';
 	$reportFormat = $_GET['format'] ?? 'pdf';
-	if ($isReportDownload && $reportFormat === 'pdf') {
-		$autoload = __DIR__ . '/vendor/autoload.php';
-		if (!is_file($autoload)) { http_response_code(503); exit('PDF support is not installed.'); }
-		require_once $autoload;
-		ob_start();
-	} elseif ($isReportDownload && $reportFormat === 'word') {
-		$autoload = __DIR__ . '/vendor/autoload.php';
-		if (!is_file($autoload)) { http_response_code(503); exit('Word support is not installed.'); }
-		require_once $autoload;
-		ob_start();
+	if ($isReportDownload) {
+		$familyRows = $family->fetch_all(MYSQLI_ASSOC);
+		$planRows = $plans->fetch_all(MYSQLI_ASSOC);
+		$generatedDocx = report_template_docx($case, $study, $familyRows, $planRows);
+		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study';
+		if ($reportFormat === 'word') {
+			header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+			header('Content-Disposition: attachment; filename="' . $downloadName . '.docx"');
+			header('Content-Length: ' . filesize($generatedDocx));
+			readfile($generatedDocx);
+			unlink($generatedDocx);
+			exit;
+		}
+		$generatedPdf = report_template_pdf($generatedDocx);
+		header('Content-Type: application/pdf');
+		header('Content-Disposition: attachment; filename="' . $downloadName . '.pdf"');
+		header('Content-Length: ' . filesize($generatedPdf));
+		readfile($generatedPdf);
+		unlink($generatedDocx);
+		unlink($generatedPdf);
+		exit;
 	}
 	render_header('Report preview'); ?>
 	<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><details class="download-menu"><summary class="button report-download">Download report</summary><div class="download-menu-items"><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=pdf">PDF <span>Best for printing</span></a><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=word">Word <span>Editable document</span></a></div></details></div>
@@ -270,7 +282,7 @@ if ($page === 'report') {
 		<h2>VII. EVALUATION AND RECOMMENDATION</h2>
 		<p><?= nl2br(e($study['evaluation_recommendation'] ?? '')) ?></p>
 		<div class="signature-grid"><div><p><strong>Prepared by:</strong></p><p class="signature-name"><u><?= e($study['prepared_signature'] ?: ($study['prepared_by'] ?? '')) ?></u><br><strong>Name &amp; Signature of SW</strong></p></div><div><p><strong>Noted by:</strong></p><p class="signature-name"><u><?= e($study['noted_signature'] ?: ($study['noted_by'] ?? '')) ?></u><br><strong>Subject Instructor</strong></p></div></div>
-	</article><?php render_footer(); if ($isReportDownload) {
+	</article><?php render_footer(); exit; /*
 		$html = ob_get_clean();
 		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study';
 		$document = new DOMDocument();
@@ -376,7 +388,7 @@ if ($page === 'report') {
 		$dompdf->render();
 		$dompdf->stream($downloadName . '.pdf', ['Attachment' => true]);
 		exit;
-	} exit; }
+	} exit; } */ }
 
 if ($page === 'qr') { render_header('QR utility'); ?><div class="page-head"><div><p class="eyebrow">Survey tools</p><h1>QR code generator</h1><p class="muted">Generate a scannable code for a Google Form or survey link. URLs are not stored.</p></div></div><form class="form-card qr-form" onsubmit="return makeQr(event)"><label>URL<input id="qr-url" type="url" placeholder="https://forms.google.com/..." required></label><label>Title / description<input id="qr-title"></label><button class="button primary">Generate QR code</button><div id="qr-result" class="qr-result" hidden><h2 id="qr-label"></h2><img id="qr-image" alt="Generated QR code"><a id="qr-download" class="button" download="survey-qr.png">Download</a></div></form><?php render_footer(); exit; }
 
