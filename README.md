@@ -9,23 +9,25 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 - Seven-section Social Case Study Report editor with repeatable family and treatment-plan rows
 - Activity/progress log linked to each case
 - Print-friendly report preview
+- PDF and editable Word-compatible report downloads from the same report preview
 - QR utility for survey URLs without storing URLs
 - Prepared statements, output escaping, ignored environment credentials, and normalized tables
 
 ## Requirements and setup
 
 1. Apache with PHP 8.3, MariaDB 10.11, and the PHP `mysqli` extension.
-2. Create the `swassist` database and database user, or use the existing project database.
-3. Copy `.env.example` to `.env` and set the local database values. `.env` is ignored by Git.
-4. Import the schema:
+2. Install Composer and run `composer install` from the project directory.
+3. Create the `swassist` database and database user, or use the existing project database.
+4. Copy `.env.example` to `.env` and set the local database values. `.env` is ignored by Git.
+5. Import the schema:
 
 	`mysql -u swassist_user -p swassist < database/schema.sql`
 
-5. Optional: import fictional demo data:
+6. Optional: import fictional demo data:
 
 	`mysql -u swassist_user -p swassist < database/seed.sql`
 
-6. Point Apache's document root at this directory. The application is available at `http://swassist.local/` when that virtual host is configured. For a quick local check, run `php -S 127.0.0.1:8099 -t .`.
+7. Point Apache's document root at this directory. The application is available at `http://swassist.local/` when that virtual host is configured. For a quick local check, run `php -S 127.0.0.1:8099 -t .`.
 
 ## Demo accounts
 

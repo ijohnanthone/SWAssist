@@ -219,13 +219,18 @@ if ($page === 'report') {
 	$plans = query($conn, 'SELECT * FROM treatment_plans WHERE case_id=? ORDER BY sort_order', 'i', [$caseId]);
 	$formatDate = static function ($value): string { return $value ? date('F j, Y', strtotime($value)) : ''; };
 	$formatIncome = static function ($value): string { return $value !== null && $value !== '' ? number_format((float) $value, 2) : ''; };
-	if (($_GET['download'] ?? '') === '1') {
-		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study.html';
-		header('Content-Type: text/html; charset=UTF-8');
-		header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+	$isReportDownload = ($_GET['download'] ?? '') === '1';
+	$reportFormat = $_GET['format'] ?? 'pdf';
+	if ($isReportDownload && $reportFormat === 'pdf') {
+		$autoload = __DIR__ . '/vendor/autoload.php';
+		if (!is_file($autoload)) { http_response_code(503); exit('PDF support is not installed.'); }
+		require_once $autoload;
+		ob_start();
+	} elseif ($isReportDownload && $reportFormat === 'word') {
+		ob_start();
 	}
 	render_header('Report preview'); ?>
-	<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><a class="button report-download" href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1" download="<?= e($case['case_code']) ?>-case-study.html">Download report</a></div>
+	<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><details class="download-menu"><summary class="button report-download">Download report</summary><div class="download-menu-items"><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=pdf">PDF <span>Best for printing</span></a><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=word">Word <span>Editable document</span></a></div></details></div>
 	<article class="report">
 		<header class="report-header">
 			<div class="school-seal"><img src="assets/images/psu-seal-source.png" alt="Palawan State University seal"></div>
@@ -262,7 +267,38 @@ if ($page === 'report') {
 		<h2>VII. EVALUATION AND RECOMMENDATION</h2>
 		<p><?= nl2br(e($study['evaluation_recommendation'] ?? '')) ?></p>
 		<div class="signature-grid"><div><p><strong>Prepared by:</strong></p><p class="signature-name"><u><?= e($study['prepared_signature'] ?: ($study['prepared_by'] ?? '')) ?></u><br><strong>Name &amp; Signature of SW</strong></p></div><div><p><strong>Noted by:</strong></p><p class="signature-name"><u><?= e($study['noted_signature'] ?: ($study['noted_by'] ?? '')) ?></u><br><strong>Subject Instructor</strong></p></div></div>
-	</article><?php render_footer(); exit; }
+	</article><?php render_footer(); if ($isReportDownload) {
+		$html = ob_get_clean();
+		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study';
+		if ($reportFormat === 'word') {
+			$stylesheet = file_get_contents(__DIR__ . '/assets/css/app.css');
+			$html = str_replace('<link rel="stylesheet" href="assets/css/app.css">', '<style>' . $stylesheet . '</style>', $html);
+			header('Content-Type: application/msword; charset=UTF-8');
+			header('Content-Disposition: attachment; filename="' . $downloadName . '.doc"');
+			echo $html;
+			exit;
+		}
+		$stylesheet = file_get_contents(__DIR__ . '/assets/css/app.css');
+		$html = str_replace('<link rel="stylesheet" href="assets/css/app.css">', '<style>' . $stylesheet . '</style>', $html);
+		if (!extension_loaded('gd')) {
+			$html = str_replace('<img src="assets/images/psu-seal-source.png" alt="Palawan State University seal">', '', $html);
+		}
+		$dompdfTempDir = sys_get_temp_dir() . '/swassist-dompdf';
+		if (!is_dir($dompdfTempDir)) { mkdir($dompdfTempDir, 0700, true); }
+		$options = new Dompdf\Options();
+		$options->set('defaultFont', 'Times New Roman');
+		$options->set('isRemoteEnabled', true);
+		$options->set('fontDir', $dompdfTempDir);
+		$options->set('fontCache', $dompdfTempDir);
+		$options->set('tempDir', $dompdfTempDir);
+		$options->setChroot(__DIR__);
+		$dompdf = new Dompdf\Dompdf($options);
+		$dompdf->loadHtml($html, 'UTF-8');
+		$dompdf->setPaper('letter', 'portrait');
+		$dompdf->render();
+		$dompdf->stream($downloadName . '.pdf', ['Attachment' => true]);
+		exit;
+	} exit; }
 
 if ($page === 'qr') { render_header('QR utility'); ?><div class="page-head"><div><p class="eyebrow">Survey tools</p><h1>QR code generator</h1><p class="muted">Generate a scannable code for a Google Form or survey link. URLs are not stored.</p></div></div><form class="form-card qr-form" onsubmit="return makeQr(event)"><label>URL<input id="qr-url" type="url" placeholder="https://forms.google.com/..." required></label><label>Title / description<input id="qr-title"></label><button class="button primary">Generate QR code</button><div id="qr-result" class="qr-result" hidden><h2 id="qr-label"></h2><img id="qr-image" alt="Generated QR code"><a id="qr-download" class="button" download="survey-qr.png">Download</a></div></form><?php render_footer(); exit; }
 
