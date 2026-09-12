@@ -42,7 +42,6 @@ function report_template_text_node(DOMDocument $document, DOMElement $paragraph,
         $paragraph->appendChild($run);
     }
 }
-
 function report_template_paragraph(DOMDocument $document, DOMElement $body, int $index, string $text): void
 {
     $node = $body->childNodes->item($index);
@@ -161,23 +160,4 @@ function report_template_docx(array $case, array $study, array $familyRows, arra
     $archive->addFromString('word/document.xml', $document->saveXML());
     $archive->close();
     return $temporaryDocx;
-}
-
-function report_template_pdf(string $docx): string
-{
-    $directory = sys_get_temp_dir() . '/swassist-report-pdf-' . bin2hex(random_bytes(4));
-    if (!mkdir($directory, 0700, true) && !is_dir($directory)) {
-        throw new RuntimeException('The PDF conversion directory could not be created.');
-    }
-    $profile = $directory . '/profile';
-    if (!mkdir($profile, 0700, true) && !is_dir($profile)) {
-        throw new RuntimeException('The PDF conversion profile could not be created.');
-    }
-    $command = 'soffice -env:UserInstallation=' . escapeshellarg('file://' . $profile) . ' --headless --convert-to pdf --outdir ' . escapeshellarg($directory) . ' ' . escapeshellarg($docx) . ' 2>&1';
-    exec($command, $output, $status);
-    $pdf = $directory . '/' . pathinfo($docx, PATHINFO_FILENAME) . '.pdf';
-    if ($status !== 0 || !is_file($pdf)) {
-        throw new RuntimeException('PDF conversion is unavailable: ' . implode(' ', $output));
-    }
-    return $pdf;
 }

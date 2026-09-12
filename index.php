@@ -227,25 +227,16 @@ if ($page === 'report') {
 		$planRows = $plans->fetch_all(MYSQLI_ASSOC);
 		$generatedDocx = report_template_docx($case, $study, $familyRows, $planRows);
 		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study';
-		if ($reportFormat === 'word') {
-			header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-			header('Content-Disposition: attachment; filename="' . $downloadName . '.docx"');
-			header('Content-Length: ' . filesize($generatedDocx));
-			readfile($generatedDocx);
-			unlink($generatedDocx);
-			exit;
-		}
-		$generatedPdf = report_template_pdf($generatedDocx);
-		header('Content-Type: application/pdf');
-		header('Content-Disposition: attachment; filename="' . $downloadName . '.pdf"');
-		header('Content-Length: ' . filesize($generatedPdf));
-		readfile($generatedPdf);
+		if ($reportFormat !== 'word') { http_response_code(404); exit('This report format is not available.'); }
+		header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+		header('Content-Disposition: attachment; filename="' . $downloadName . '.docx"');
+		header('Content-Length: ' . filesize($generatedDocx));
+		readfile($generatedDocx);
 		unlink($generatedDocx);
-		unlink($generatedPdf);
 		exit;
 	}
 	render_header('Report preview'); ?>
-	<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><details class="download-menu"><summary class="button report-download">Download report</summary><div class="download-menu-items"><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=pdf">PDF <span>Best for printing</span></a><a href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=word">Word <span>Editable document</span></a></div></details></div>
+		<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><a class="button report-download" href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1&amp;format=word">Download Word document</a></div>
 	<article class="report">
 		<header class="report-header">
 			<div class="school-seal"><img src="assets/images/psu-seal-source.png" alt="Palawan State University seal"></div>

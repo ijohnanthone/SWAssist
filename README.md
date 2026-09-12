@@ -9,25 +9,24 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 - Seven-section Social Case Study Report editor with repeatable family and treatment-plan rows
 - Activity/progress log linked to each case
 - Print-friendly report preview
-- DOCX and PDF report downloads generated from the original `reference/SCSR-Format (1).docx` template
+- DOCX report downloads generated from the original `reference/SCSR-Format (1).docx` template
 - QR utility for survey URLs without storing URLs
 - Prepared statements, output escaping, ignored environment credentials, and normalized tables
 
 ## Requirements and setup
 
 1. Apache with PHP 8.3, MariaDB 10.11, and the PHP `mysqli` extension.
-2. Install LibreOffice and ensure the `soffice` command is available for PDF conversion.
-3. Create the `swassist` database and database user, or use the existing project database.
-4. Copy `.env.example` to `.env` and set the local database values. `.env` is ignored by Git.
-5. Import the schema:
+2. Create the `swassist` database and database user, or use the existing project database.
+3. Copy `.env.example` to `.env` and set the local database values. `.env` is ignored by Git.
+4. Import the schema:
 
 	`mysql -u swassist_user -p swassist < database/schema.sql`
 
-6. Optional: import fictional demo data:
+5. Optional: import fictional demo data:
 
 	`mysql -u swassist_user -p swassist < database/seed.sql`
 
-7. Point Apache's document root at this directory. The application is available at `http://swassist.local/` when that virtual host is configured. For a quick local check, run `php -S 127.0.0.1:8099 -t .`.
+6. Point Apache's document root at this directory. The application is available at `http://swassist.local/` when that virtual host is configured. For a quick local check, run `php -S 127.0.0.1:8099 -t .`.
 
 ## Demo accounts
 
@@ -49,6 +48,6 @@ The QR preview uses the public QR Server image endpoint, so users should avoid p
 
 The application intentionally uses a small front controller (`index.php`), shared procedural helpers, mysqli prepared statements, and no framework. The case-study editor is separated into `case-study.php`; the normalized schema keeps family members and treatment rows out of the main case record.
 
-Report downloads copy the authoritative DOCX template, replace its sample text and table rows with the saved case data, and preserve the template's Word formatting. PDF downloads are converted from that generated DOCX through LibreOffice, so the server must provide `soffice` for PDF downloads.
+Word report downloads copy the authoritative DOCX template, replace its sample text and table rows with the saved case data, and preserve the template's Word formatting.
 
 Future improvements include authenticated attachment delivery, supervisor review notes, activity edit/archive screens, and a local QR library for installations without outbound network access.
