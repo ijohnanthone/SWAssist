@@ -58,7 +58,10 @@ function query(mysqli $conn, string $sql, string $types = '', array $params = []
 
 function can_access_case(mysqli $conn, int $caseId, int $userId, string $role): bool
 {
-    if (in_array($role, ['admin', 'supervisor'], true)) {
+    if ($role === 'admin') {
+        return false;
+    }
+    if ($role === 'supervisor') {
         return (bool) query($conn, 'SELECT id FROM cases WHERE id = ?', 'i', [$caseId])->fetch_assoc();
     }
     return (bool) query($conn, 'SELECT id FROM cases WHERE id = ? AND assigned_student_id = ?', 'ii', [$caseId, $userId])->fetch_assoc();

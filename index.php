@@ -66,6 +66,100 @@ if (in_array($page, ['login', 'register'], true)) {
 require_auth();
 $currentUser = user();
 
+if ($currentUser['role'] === 'admin' && $page === 'dashboard') {
+	redirect('index.php?page=users');
+}
+if ($currentUser['role'] === 'admin' && !in_array($page, ['users', 'user-edit', 'user-reset', 'user-delete', 'admin-password', 'logout'], true)) {
+	http_response_code(403);
+	exit('Account administrators can only manage accounts.');
+}
+
+if ($page === 'admin-password') {
+	require_role(['admin']);
+	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+		verify_csrf();
+		$password = $_POST['password'] ?? '';
+		$confirmation = $_POST['password_confirmation'] ?? '';
+		if (strlen($password) < 8 || $password !== $confirmation) {
+			flash('error', 'Use a matching password of at least 8 characters.');
+			redirect('index.php?page=admin-password');
+		}
+		$hash = password_hash($password, PASSWORD_DEFAULT);
+		query($conn, 'UPDATE users SET password = ? WHERE id = ?', 'si', [$hash, $currentUser['id']]);
+		flash('success', 'Your password was changed.');
+		redirect('index.php?page=admin-password');
+	}
+	render_header('My password'); ?><div class="page-head"><div><p class="eyebrow">Account security</p><h1>My password</h1><p class="muted">Change the administrator password for this account.</p></div></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>New password<input type="password" name="password" minlength="8" required></label><label>Confirm new password<input type="password" name="password_confirmation" minlength="8" required></label><button class="button primary" type="submit">Change password</button></form><?php render_footer(); exit;
+}
+
+if ($page === 'user-edit') {
+	require_role(['admin']);
+	$userId = (int) ($_GET['id'] ?? 0);
+	$account = query($conn, 'SELECT id, username, full_name, role FROM users WHERE id = ?', 'i', [$userId])->fetch_assoc();
+	if (!$account) { http_response_code(404); exit('Account not found.'); }
+	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+		verify_csrf();
+		$username = trim($_POST['username'] ?? '');
+		$fullName = trim($_POST['full_name'] ?? '');
+		$role = $_POST['role'] ?? 'student';
+		if ($username === '' || $fullName === '' || !in_array($role, ['student', 'supervisor', 'admin'], true)) {
+			flash('error', 'Provide a name, username, and valid role.');
+			redirect('index.php?page=user-edit&id=' . $userId);
+		}
+		if ($userId === (int) $currentUser['id'] && $role !== 'admin') {
+			flash('error', 'You cannot remove your own administrator role.');
+			redirect('index.php?page=user-edit&id=' . $userId);
+		}
+		$statement = $conn->prepare('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?');
+		$statement->bind_param('sssi', $username, $fullName, $role, $userId);
+		if (!$statement->execute()) {
+			flash('error', $statement->errno === 1062 ? 'That username is already in use.' : 'The account could not be updated.');
+		} else {
+			flash('success', 'Account updated.');
+		}
+		redirect('index.php?page=users');
+	}
+	render_header('Edit account'); ?><div class="page-head"><div><p class="eyebrow">Account control</p><h1>Edit account</h1></div><a class="button" href="index.php?page=users">Back to accounts</a></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>Full name<input name="full_name" value="<?= e($account['full_name']) ?>" required></label><label>Username<input name="username" value="<?= e($account['username']) ?>" required></label><label>Role<select name="role"><?php foreach (['student', 'supervisor', 'admin'] as $role): ?><option value="<?= $role ?>" <?= $account['role'] === $role ? 'selected' : '' ?>><?= ucfirst($role) ?></option><?php endforeach; ?></select></label><button class="button primary" type="submit">Save account</button></form><form class="form-card narrow" method="post" action="index.php?page=user-reset&amp;id=<?= $userId ?>"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><h2>Reset password</h2><label>New temporary password<input type="password" name="password" minlength="8" required></label><label>Confirm temporary password<input type="password" name="password_confirmation" minlength="8" required></label><button class="button" type="submit">Reset password</button></form><?php render_footer(); exit;
+}
+
+if ($page === 'user-reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+	require_role(['admin']);
+	verify_csrf();
+	$userId = (int) ($_GET['id'] ?? 0);
+	$password = $_POST['password'] ?? '';
+	$confirmation = $_POST['password_confirmation'] ?? '';
+	if (!$userId || strlen($password) < 8 || $password !== $confirmation || !query($conn, 'SELECT id FROM users WHERE id = ?', 'i', [$userId])->fetch_assoc()) {
+		flash('error', 'Use a matching password of at least 8 characters for an existing account.');
+	} else {
+		$hash = password_hash($password, PASSWORD_DEFAULT);
+		query($conn, 'UPDATE users SET password = ? WHERE id = ?', 'si', [$hash, $userId]);
+		flash('success', 'The account password was reset.');
+	}
+	redirect('index.php?page=users');
+}
+
+if ($page === 'user-delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+	require_role(['admin']);
+	verify_csrf();
+	$userId = (int) ($_GET['id'] ?? 0);
+	$account = query($conn, 'SELECT id, role FROM users WHERE id = ?', 'i', [$userId])->fetch_assoc();
+	$createdCases = (int) (query($conn, 'SELECT COUNT(*) AS total FROM cases WHERE created_by = ?', 'i', [$userId])->fetch_assoc()['total'] ?? 0);
+	$adminCount = (int) (query($conn, "SELECT COUNT(*) AS total FROM users WHERE role = 'admin'")->fetch_assoc()['total'] ?? 0);
+	if (!$account || $userId === (int) $currentUser['id'] || ($account['role'] === 'admin' && $adminCount <= 1) || $createdCases > 0) {
+		flash('error', 'This account cannot be removed. Protect your own account, the last administrator, and accounts that created case records.');
+	} else {
+		query($conn, 'DELETE FROM users WHERE id = ?', 'i', [$userId]);
+		flash('success', 'Account removed.');
+	}
+	redirect('index.php?page=users');
+}
+
+if ($page === 'users') {
+	require_role(['admin']);
+	$accounts = query($conn, 'SELECT id, username, full_name, role, created_at FROM users ORDER BY full_name')->fetch_all(MYSQLI_ASSOC);
+	render_header('Accounts'); ?><div class="page-head"><div><p class="eyebrow">Account control</p><h1>Accounts</h1><p class="muted">Manage usernames, roles, and password resets. Case records are not available from this area.</p></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody><?php foreach ($accounts as $account): ?><tr><td><?= e($account['full_name']) ?></td><td><?= e($account['username']) ?></td><td><span class="badge"><?= e(ucfirst($account['role'])) ?></span></td><td><?= e(date('M j, Y', strtotime($account['created_at']))) ?></td><td><div class="row-actions"><a class="text-link" href="index.php?page=user-edit&id=<?= (int) $account['id'] ?>">Edit</a><?php if ((int) $account['id'] !== (int) $currentUser['id']): ?><form method="post" action="index.php?page=user-delete&amp;id=<?= (int) $account['id'] ?>" onsubmit="return confirm('Remove this account?');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button class="text-link danger-link" type="submit">Remove</button></form><?php endif; ?></div></td></tr><?php endforeach; ?></tbody></table></div><?php render_footer(); exit;
+}
+
 if ($page === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	verify_csrf();
 	$caseId = (int) ($_POST['case_id'] ?? 0);

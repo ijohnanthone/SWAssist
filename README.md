@@ -10,6 +10,7 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 - Activity/progress log linked to each case
 - Print-friendly report preview
 - DOCX report downloads generated from the original `reference/SCSR-Format (1).docx` template
+- Account administrator controls for editing, resetting, and removing user accounts
 - QR utility for survey URLs without storing URLs
 - Prepared statements, output escaping, ignored environment credentials, and normalized tables
 
@@ -49,5 +50,7 @@ The QR preview uses the public QR Server image endpoint, so users should avoid p
 The application intentionally uses a small front controller (`index.php`), shared procedural helpers, mysqli prepared statements, and no framework. The case-study editor is separated into `case-study.php`; the normalized schema keeps family members and treatment rows out of the main case record.
 
 Word report downloads copy the authoritative DOCX template, replace its sample text and table rows with the saved case data, and preserve the template's Word formatting.
+
+The `admin` role is restricted to account management. Administrators can edit account details, reset passwords, remove eligible accounts, and change their own password, but cannot access case, activity, QR, or report routes. Supervisors and students retain case-management access.
 
 Future improvements include authenticated attachment delivery, supervisor review notes, activity edit/archive screens, and a local QR library for installations without outbound network access.
