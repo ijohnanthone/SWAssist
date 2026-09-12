@@ -219,8 +219,13 @@ if ($page === 'report') {
 	$plans = query($conn, 'SELECT * FROM treatment_plans WHERE case_id=? ORDER BY sort_order', 'i', [$caseId]);
 	$formatDate = static function ($value): string { return $value ? date('F j, Y', strtotime($value)) : ''; };
 	$formatIncome = static function ($value): string { return $value !== null && $value !== '' ? number_format((float) $value, 2) : ''; };
+	if (($_GET['download'] ?? '') === '1') {
+		$downloadName = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $case['case_code']) . '-case-study.html';
+		header('Content-Type: text/html; charset=UTF-8');
+		header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+	}
 	render_header('Report preview'); ?>
-	<div class="print-actions"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div>
+	<div class="print-actions"><div class="print-action-group"><button class="button primary" onclick="window.print()">Print report</button><a class="button" href="index.php?page=case-study&id=<?= $caseId ?>">Back to editor</a></div><a class="button report-download" href="index.php?page=report&amp;id=<?= $caseId ?>&amp;download=1" download="<?= e($case['case_code']) ?>-case-study.html">Download report</a></div>
 	<article class="report">
 		<header class="report-header">
 			<div class="school-seal"><img src="assets/images/psu-seal-source.png" alt="Palawan State University seal"></div>
