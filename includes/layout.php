@@ -46,5 +46,5 @@ function render_header(string $title): void
 
 function render_footer(): void
 {
-    ?></main><script src="assets/js/app.js"></script></body></html><?php
+    ?></main><script src="assets/js/app.js?v=<?= filemtime(__DIR__ . '/../assets/js/app.js') ?>"></script></body></html><?php
 }
