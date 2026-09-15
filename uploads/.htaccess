@@ -1,0 +1,8 @@
+# Prevent PHP execution and direct access to uploaded files.
+# Downloads are served through the authenticated download controller.
+
+php_flag engine off
+
+<FilesMatch "\.(ph(p[0-9]?|tml|ar)|cgi|pl|py|sh|bash|exe|bat|cmd)$">
+    Require all denied
+</FilesMatch>

@@ -33,13 +33,16 @@ SWAssist is a PHP and MariaDB documentation workspace for Social Work students a
 
 ## Demo accounts
 
+> **⚠️ WARNING — Do not use demo accounts with real data.**
+> These accounts are for local development and testing only. If you imported `database/seed.sql`, **remove or change these accounts before using the system with real client data.** The passwords below are public and must never be used in production.
+
 These accounts exist only after importing `database/seed.sql`:
 
 - `demo_admin` / `AdminDemo123!`
 - `demo_supervisor` / `SupervisorDemo123!`
 - `demo_student` / `StudentDemo123!`
 
-Change or remove demo accounts before using the system with real data.
+Remove demo accounts before using the system with real data. In production, the administrator creates all user accounts through the account management interface.
 
 ## Security notes
 

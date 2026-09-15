@@ -6,5 +6,6 @@
 *.db
 /uploads/*
 !/uploads/.gitkeep
+!/uploads/.htaccess
 reference/*
 !reference/SCSR-Format (1).docx

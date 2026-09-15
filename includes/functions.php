@@ -25,6 +25,8 @@ function verify_csrf(): void
         http_response_code(419);
         exit('Your form session expired. Please try again.');
     }
+    // Rotate the token after successful use to prevent replay
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 
 function flash(string $type, string $message): void
@@ -76,4 +78,21 @@ function optional_decimal(mixed $value): ?string
 {
     $value = trim((string) $value);
     return $value !== '' && is_numeric($value) ? $value : null;
+}
+
+function validate_password(string $password): ?string
+{
+    if (strlen($password) < 8) {
+        return 'Password must be at least 8 characters.';
+    }
+    if (!preg_match('/[A-Z]/', $password)) {
+        return 'Password must contain at least one uppercase letter.';
+    }
+    if (!preg_match('/[a-z]/', $password)) {
+        return 'Password must contain at least one lowercase letter.';
+    }
+    if (!preg_match('/[0-9]/', $password)) {
+        return 'Password must contain at least one digit.';
+    }
+    return null;
 }

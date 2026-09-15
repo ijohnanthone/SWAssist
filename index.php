@@ -9,7 +9,8 @@ if (!isset($_GET['page']) && !user()) {
 	redirect('index.php?page=login');
 }
 
-if ($page === 'logout') {
+if ($page === 'logout' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+	verify_csrf();
 	send_no_cache_headers();
 	$_SESSION = [];
 	if (ini_get('session.use_cookies')) {
@@ -23,45 +24,67 @@ if ($page === 'logout') {
 
 if ($page === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	verify_csrf();
+	// Rate limiting: allow 5 attempts per 15-minute window
+	if (!isset($_SESSION['login_attempts'])) { $_SESSION['login_attempts'] = 0; $_SESSION['login_window_start'] = time(); }
+	if (time() - ($_SESSION['login_window_start'] ?? 0) > 900) { $_SESSION['login_attempts'] = 0; $_SESSION['login_window_start'] = time(); }
+	if (($_SESSION['login_attempts'] ?? 0) >= 5) {
+		flash('error', 'Too many failed sign-in attempts. Please wait 15 minutes.');
+		redirect('index.php?page=login');
+	}
 	$username = trim($_POST['username'] ?? '');
 	$password = $_POST['password'] ?? '';
 	$account = query($conn, 'SELECT id, username, password, full_name, role FROM users WHERE username = ?', 's', [$username])->fetch_assoc();
 	if ($account && password_verify($password, $account['password'])) {
+		$_SESSION['login_attempts'] = 0;
 		session_regenerate_id(true);
 		unset($account['password']);
 		$_SESSION['user'] = $account;
 		redirect('index.php');
 	}
+	$_SESSION['login_attempts'] = ($_SESSION['login_attempts'] ?? 0) + 1;
 	flash('error', 'The username or password is incorrect.');
 	redirect('index.php?page=login');
 }
 
+// Registration is restricted to first-run bootstrap (no users exist yet).
+// After the first admin account is created, all accounts are created by administrators.
+$userCount = (int) (query($conn, 'SELECT COUNT(*) AS total FROM users')->fetch_assoc()['total'] ?? 0);
+$allowBootstrap = $userCount === 0;
+
 if ($page === 'register' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+	if (!$allowBootstrap) { flash('error', 'Registration is disabled. Contact your administrator.'); redirect('index.php?page=login'); }
 	verify_csrf();
 	$username = trim($_POST['username'] ?? '');
 	$fullName = trim($_POST['full_name'] ?? '');
 	$password = $_POST['password'] ?? '';
-	if ($username === '' || $fullName === '' || strlen($password) < 8) {
-		flash('error', 'Provide a name, username, and password of at least 8 characters.');
+	$passwordError = validate_password($password);
+	if ($username === '' || $fullName === '') {
+		flash('error', 'Provide a name and username.');
 		redirect('index.php?page=register');
 	}
-	$statement = $conn->prepare("INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, 'student')");
+	if ($passwordError) {
+		flash('error', $passwordError);
+		redirect('index.php?page=register');
+	}
+	$statement = $conn->prepare("INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, 'admin')");
 	$hash = password_hash($password, PASSWORD_DEFAULT);
 	$statement->bind_param('sss', $username, $hash, $fullName);
 	if (!$statement->execute()) {
 		flash('error', $statement->errno === 1062 ? 'That username is already in use.' : 'Registration could not be completed.');
 	} else {
-		flash('success', 'Account created. You can now sign in.');
+		flash('success', 'Administrator account created. You can now sign in.');
 	}
 	redirect('index.php?page=login');
 }
 
-if (in_array($page, ['login', 'register'], true)) {
-	render_header($page === 'login' ? 'Sign in' : 'Create account');
+if ($page === 'login' || ($page === 'register' && $allowBootstrap)) {
+	$isRegister = $page === 'register' && $allowBootstrap;
+	render_header($isRegister ? 'Initial setup' : 'Sign in');
 	?>
-	<section class="auth-shell"><div class="auth-copy"><p class="eyebrow">SWAssist</p><h1>Documentation that keeps the work moving.</h1><p>Organize case records, progress notes, and Social Case Study Reports in one private workspace.</p></div><form class="form-card" method="post"><h2><?= $page === 'login' ? 'Welcome back' : 'Create a student account' ?></h2><?php if ($page === 'login'): ?><label>Username<input name="username" required autofocus></label><label>Password<input type="password" name="password" required></label><button class="button primary" type="submit">Sign in</button><p class="muted">New student? <a href="index.php?page=register">Create an account</a></p><?php else: ?><label>Full name<input name="full_name" required></label><label>Username<input name="username" required></label><label>Password<input type="password" name="password" minlength="8" required></label><button class="button primary" type="submit">Create account</button><p class="muted"><a href="index.php?page=login">Back to sign in</a></p><?php endif; ?><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"></form></section>
+	<section class="auth-shell"><div class="auth-copy"><p class="eyebrow">SWAssist</p><h1>Documentation that keeps the work moving.</h1><p>Organize case records, progress notes, and Social Case Study Reports in one private workspace.</p></div><form class="form-card" method="post"><h2><?= $isRegister ? 'Create the first administrator account' : 'Welcome back' ?></h2><?php if (!$isRegister): ?><label>Username<input name="username" required autofocus></label><label>Password<input type="password" name="password" required></label><button class="button primary" type="submit">Sign in</button><?php if ($allowBootstrap): ?><p class="muted">First time? <a href="index.php?page=register">Create initial admin account</a></p><?php endif; ?><?php else: ?><label>Full name<input name="full_name" required></label><label>Username<input name="username" required></label><label>Password<input type="password" name="password" minlength="8" required></label><p class="muted">Requires at least 8 characters, one uppercase letter, one lowercase letter, and one digit.</p><button class="button primary" type="submit">Create administrator account</button><p class="muted"><a href="index.php?page=login">Back to sign in</a></p><?php endif; ?><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"></form></section>
 	<?php render_footer(); exit;
 }
+if ($page === 'register') { redirect('index.php?page=login'); }
 
 require_auth();
 $currentUser = user();
@@ -69,7 +92,7 @@ $currentUser = user();
 if ($currentUser['role'] === 'admin' && $page === 'dashboard') {
 	redirect('index.php?page=users');
 }
-if ($currentUser['role'] === 'admin' && !in_array($page, ['users', 'user-edit', 'user-profile', 'user-reset', 'user-delete', 'admin-password', 'logout'], true)) {
+if ($currentUser['role'] === 'admin' && !in_array($page, ['users', 'user-edit', 'user-create', 'user-profile', 'user-reset', 'user-delete', 'admin-password', 'logout'], true)) {
 	http_response_code(403);
 	exit('Account administrators can only manage accounts.');
 }
@@ -80,8 +103,13 @@ if ($page === 'admin-password') {
 		verify_csrf();
 		$password = $_POST['password'] ?? '';
 		$confirmation = $_POST['password_confirmation'] ?? '';
-		if (strlen($password) < 8 || $password !== $confirmation) {
-			flash('error', 'Use a matching password of at least 8 characters.');
+		$passwordError = validate_password($password);
+		if ($passwordError) {
+			flash('error', $passwordError);
+			redirect('index.php?page=admin-password');
+		}
+		if ($password !== $confirmation) {
+			flash('error', 'The passwords do not match.');
 			redirect('index.php?page=admin-password');
 		}
 		$hash = password_hash($password, PASSWORD_DEFAULT);
@@ -89,7 +117,7 @@ if ($page === 'admin-password') {
 		flash('success', 'Your password was changed.');
 		redirect('index.php?page=admin-password');
 	}
-	render_header('My password'); ?><div class="page-head"><div><p class="eyebrow">Account security</p><h1>My password</h1><p class="muted">Change the administrator password for this account.</p></div></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>New password<input type="password" name="password" minlength="8" required></label><label>Confirm new password<input type="password" name="password_confirmation" minlength="8" required></label><button class="button primary" type="submit">Change password</button></form><?php render_footer(); exit;
+	render_header('My password'); ?><div class="page-head"><div><p class="eyebrow">Account security</p><h1>My password</h1><p class="muted">Change the administrator password for this account.</p></div></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>New password<input type="password" name="password" minlength="8" required></label><label>Confirm new password<input type="password" name="password_confirmation" minlength="8" required></label><p class="muted">Requires at least 8 characters, one uppercase letter, one lowercase letter, and one digit.</p><button class="button primary" type="submit">Change password</button></form><?php render_footer(); exit;
 }
 
 if ($page === 'user-profile') {
@@ -137,8 +165,17 @@ if ($page === 'user-reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	$userId = (int) ($_GET['id'] ?? 0);
 	$password = $_POST['password'] ?? '';
 	$confirmation = $_POST['password_confirmation'] ?? '';
-	if (!$userId || strlen($password) < 8 || $password !== $confirmation || !query($conn, 'SELECT id FROM users WHERE id = ?', 'i', [$userId])->fetch_assoc()) {
-		flash('error', 'Use a matching password of at least 8 characters for an existing account.');
+	$passwordError = validate_password($password);
+	if ($passwordError) {
+		flash('error', $passwordError);
+		redirect('index.php?page=user-edit&id=' . $userId);
+	}
+	if ($password !== $confirmation) {
+		flash('error', 'The passwords do not match.');
+		redirect('index.php?page=user-edit&id=' . $userId);
+	}
+	if (!$userId || !query($conn, 'SELECT id FROM users WHERE id = ?', 'i', [$userId])->fetch_assoc()) {
+		flash('error', 'Account not found.');
 	} else {
 		$hash = password_hash($password, PASSWORD_DEFAULT);
 		query($conn, 'UPDATE users SET password = ? WHERE id = ?', 'si', [$hash, $userId]);
@@ -163,10 +200,44 @@ if ($page === 'user-delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	redirect('index.php?page=users');
 }
 
+if ($page === 'user-create') {
+	require_role(['admin']);
+	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+		verify_csrf();
+		$username = trim($_POST['username'] ?? '');
+		$fullName = trim($_POST['full_name'] ?? '');
+		$password = $_POST['password'] ?? '';
+		$role = $_POST['role'] ?? 'student';
+		if ($username === '' || $fullName === '') {
+			flash('error', 'Provide a name and username.');
+			redirect('index.php?page=user-create');
+		}
+		if (!in_array($role, ['student', 'supervisor', 'admin'], true)) {
+			flash('error', 'Select a valid role.');
+			redirect('index.php?page=user-create');
+		}
+		$passwordError = validate_password($password);
+		if ($passwordError) {
+			flash('error', $passwordError);
+			redirect('index.php?page=user-create');
+		}
+		$hash = password_hash($password, PASSWORD_DEFAULT);
+		$statement = $conn->prepare('INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)');
+		$statement->bind_param('ssss', $username, $hash, $fullName, $role);
+		if (!$statement->execute()) {
+			flash('error', $statement->errno === 1062 ? 'That username is already in use.' : 'The account could not be created.');
+			redirect('index.php?page=user-create');
+		}
+		flash('success', 'Account created.');
+		redirect('index.php?page=users');
+	}
+	render_header('Create account'); ?><div class="page-head"><div><p class="eyebrow">Account control</p><h1>Create account</h1></div><a class="button" href="index.php?page=users">Back to accounts</a></div><form class="form-card narrow" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>Full name<input name="full_name" required></label><label>Username<input name="username" required></label><label>Temporary password<input type="password" name="password" minlength="8" required></label><p class="muted">Requires at least 8 characters, one uppercase letter, one lowercase letter, and one digit.</p><label>Role<select name="role"><option value="student" selected>Student</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label><button class="button primary" type="submit">Create account</button></form><?php render_footer(); exit;
+}
+
 if ($page === 'users') {
 	require_role(['admin']);
 	$accounts = query($conn, 'SELECT id, username, full_name, role, created_at FROM users ORDER BY full_name')->fetch_all(MYSQLI_ASSOC);
-	render_header('Accounts'); ?><div class="page-head"><div><p class="eyebrow">Account control</p><h1>Accounts</h1><p class="muted">Manage usernames, roles, and password resets. Case records are not available from this area.</p></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody><?php foreach ($accounts as $account): ?><tr><td><?= e($account['full_name']) ?></td><td><?= e($account['username']) ?></td><td><span class="badge"><?= e(ucfirst($account['role'])) ?></span></td><td><?= e(date('M j, Y', strtotime($account['created_at']))) ?></td><td><div class="row-actions"><a class="text-link" href="index.php?page=user-edit&id=<?= (int) $account['id'] ?>">Edit</a><?php if ((int) $account['id'] !== (int) $currentUser['id']): ?><form method="post" action="index.php?page=user-delete&amp;id=<?= (int) $account['id'] ?>" onsubmit="return confirm('Remove this account?');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button class="text-link danger-link" type="submit">Remove</button></form><?php endif; ?></div></td></tr><?php endforeach; ?></tbody></table></div><?php render_footer(); exit;
+	render_header('Accounts'); ?><div class="page-head"><div><p class="eyebrow">Account control</p><h1>Accounts</h1><p class="muted">Manage usernames, roles, and password resets. Case records are not available from this area.</p></div><a class="button primary" href="index.php?page=user-create">+ New account</a></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody><?php foreach ($accounts as $account): ?><tr><td><?= e($account['full_name']) ?></td><td><?= e($account['username']) ?></td><td><span class="badge"><?= e(ucfirst($account['role'])) ?></span></td><td><?= e(date('M j, Y', strtotime($account['created_at']))) ?></td><td><div class="row-actions"><a class="text-link" href="index.php?page=user-edit&id=<?= (int) $account['id'] ?>">Edit</a><?php if ((int) $account['id'] !== (int) $currentUser['id']): ?><form method="post" action="index.php?page=user-delete&amp;id=<?= (int) $account['id'] ?>" onsubmit="return confirm('Remove this account?');"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button class="text-link danger-link" type="submit">Remove</button></form><?php endif; ?></div></td></tr><?php endforeach; ?></tbody></table></div><?php render_footer(); exit;
 }
 
 if ($page === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -212,7 +283,17 @@ if ($page === 'case-create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	$nextSequence = (int) (query($conn, "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(case_code, '-', -1) AS UNSIGNED)), 0) + 1 AS next_sequence FROM cases WHERE case_code LIKE ?", 's', ['SW-' . $caseYear . '-%'])->fetch_assoc()['next_sequence'] ?? 1);
 	$caseCode = sprintf('SW-%s-%03d', $caseYear, $nextSequence);
 	$statement = $conn->prepare("INSERT INTO cases (case_code, client_name, age, sex, civil_status, religious_affiliation, date_of_birth, place_of_birth, education, occupation, monthly_income, present_address, home_address, status, assigned_student_id, created_by) VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?)");
-	$age = $_POST['age'] ?? ''; $income = $_POST['monthly_income'] ?? ''; $student = (int) ($_POST['assigned_student_id'] ?? $currentUser['id']); $status = $_POST['status'] ?? 'Draft';
+	$age = $_POST['age'] ?? ''; $income = $_POST['monthly_income'] ?? ''; $status = $_POST['status'] ?? 'Draft';
+	if (!in_array($status, ['Draft', 'Active', 'Completed', 'Archived'], true)) { $status = 'Draft'; }
+	// Students can only assign cases to themselves; supervisors can assign to any student
+	if ($currentUser['role'] === 'student') {
+		$student = $currentUser['id'];
+	} else {
+		$student = (int) ($_POST['assigned_student_id'] ?? $currentUser['id']);
+		if ($student && !query($conn, "SELECT id FROM users WHERE id = ? AND role = 'student'", 'i', [$student])->fetch_assoc()) {
+			flash('error', 'The assigned student account does not exist.'); redirect('index.php?page=case-create');
+		}
+	}
 	$sex = $_POST['sex'] ?? ''; $civilStatus = $_POST['civil_status'] ?? ''; $religion = $_POST['religious_affiliation'] ?? ''; $dateOfBirth = $_POST['date_of_birth'] ?? ''; $placeOfBirth = $_POST['place_of_birth'] ?? ''; $education = $_POST['education'] ?? ''; $occupation = $_POST['occupation'] ?? ''; $presentAddress = $_POST['present_address'] ?? ''; $homeAddress = $_POST['home_address'] ?? '';
 	$statement->bind_param('ssssssssssssssii', $caseCode, $clientName, $age, $sex, $civilStatus, $religion, $dateOfBirth, $placeOfBirth, $education, $occupation, $income, $presentAddress, $homeAddress, $status, $student, $currentUser['id']);
 	if (!$statement->execute()) { flash('error', $statement->errno === 1062 ? 'That case ID already exists.' : 'The case could not be saved.'); redirect('index.php?page=case-create'); }
@@ -264,6 +345,7 @@ if ($page === 'case-edit') {
 	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		verify_csrf();
 		$clientName = trim($_POST['client_name'] ?? ''); $status = $_POST['status'] ?? 'Draft'; $age = $_POST['age'] ?? ''; $income = $_POST['monthly_income'] ?? '';
+		if (!in_array($status, ['Draft', 'Active', 'Completed', 'Archived'], true)) { $status = 'Draft'; }
 		$statement = $conn->prepare("UPDATE cases SET client_name=?, age=NULLIF(?, ''), sex=?, civil_status=?, religious_affiliation=?, date_of_birth=NULLIF(?, ''), place_of_birth=?, education=?, occupation=?, monthly_income=NULLIF(?, ''), present_address=?, home_address=?, status=? WHERE id=?");
 		$sex = $_POST['sex'] ?? ''; $civilStatus = $_POST['civil_status'] ?? ''; $religion = $_POST['religious_affiliation'] ?? ''; $dateOfBirth = $_POST['date_of_birth'] ?? ''; $placeOfBirth = $_POST['place_of_birth'] ?? ''; $education = $_POST['education'] ?? ''; $occupation = $_POST['occupation'] ?? ''; $presentAddress = $_POST['present_address'] ?? ''; $homeAddress = $_POST['home_address'] ?? '';
 		$statement->bind_param('sssssssssssssi', $clientName, $age, $sex, $civilStatus, $religion, $dateOfBirth, $placeOfBirth, $education, $occupation, $income, $presentAddress, $homeAddress, $status, $caseId);
@@ -314,7 +396,7 @@ if ($page === 'activity-create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	query($conn, 'INSERT INTO activities (case_id,title,description,activity_date,location,responsible_person,result_output,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?)', 'isssssssi', [$caseId, trim($_POST['title']), trim($_POST['description']), $_POST['activity_date'], trim($_POST['location']), trim($_POST['responsible_person']), trim($_POST['result_output']), trim($_POST['notes']), $currentUser['id']]);
 	flash('success', 'Activity recorded.'); redirect('index.php?page=case&id=' . $caseId);
 }
-if ($page === 'activity-create') { $caseId = (int) ($_GET['case_id'] ?? 0); render_header('Add activity'); ?><div class="page-head"><div><p class="eyebrow">Progress notes</p><h1>Add activity</h1></div></div><form class="form-card wide" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>Case<select name="case_id" required><?php $list = query($conn, $currentUser['role'] === 'student' ? 'SELECT id,case_code,client_name FROM cases WHERE assigned_student_id = ? ORDER BY case_code' : 'SELECT id,case_code,client_name FROM cases ORDER BY case_code', $currentUser['role'] === 'student' ? 'i' : '', $currentUser['role'] === 'student' ? [$currentUser['id']] : []); while ($item = $list->fetch_assoc()): ?><option value="<?= $item['id'] ?>" <?= $item['id'] === $caseId ? 'selected' : '' ?>><?= e($item['case_code'] . ' · ' . $item['client_name']) ?></option><?php endwhile; ?></select></label><div class="form-grid"><label>Activity title<input name="title" required></label><label>Date<input type="date" name="activity_date" value="<?= date('Y-m-d') ?>" required></label><label>Location<input name="location"></label><label>Responsible person<input name="responsible_person"></label><label class="span-2">Description<textarea name="description" rows="4"></textarea></label><label class="span-2">Result / output<textarea name="result_output" rows="4"></textarea></label><label class="span-2">Notes<textarea name="notes" rows="4"></textarea></label></div><button class="button primary">Save activity</button></form><?php render_footer(); exit; }
+if ($page === 'activity-create') { $caseId = (int) ($_GET['case_id'] ?? 0); if ($caseId && !can_access_case($conn, $caseId, $currentUser['id'], $currentUser['role'])) { $caseId = 0; } render_header('Add activity'); ?><div class="page-head"><div><p class="eyebrow">Progress notes</p><h1>Add activity</h1></div></div><form class="form-card wide" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><label>Case<select name="case_id" required><?php $list = query($conn, $currentUser['role'] === 'student' ? 'SELECT id,case_code,client_name FROM cases WHERE assigned_student_id = ? ORDER BY case_code' : 'SELECT id,case_code,client_name FROM cases ORDER BY case_code', $currentUser['role'] === 'student' ? 'i' : '', $currentUser['role'] === 'student' ? [$currentUser['id']] : []); while ($item = $list->fetch_assoc()): ?><option value="<?= $item['id'] ?>" <?= $item['id'] === $caseId ? 'selected' : '' ?>><?= e($item['case_code'] . ' · ' . $item['client_name']) ?></option><?php endwhile; ?></select></label><div class="form-grid"><label>Activity title<input name="title" required></label><label>Date<input type="date" name="activity_date" value="<?= date('Y-m-d') ?>" required></label><label>Location<input name="location"></label><label>Responsible person<input name="responsible_person"></label><label class="span-2">Description<textarea name="description" rows="4"></textarea></label><label class="span-2">Result / output<textarea name="result_output" rows="4"></textarea></label><label class="span-2">Notes<textarea name="notes" rows="4"></textarea></label></div><button class="button primary">Save activity</button></form><?php render_footer(); exit; }
 
 if ($page === 'report') {
 	$caseId = (int) ($_GET['id'] ?? 0);
@@ -488,4 +570,16 @@ if ($page === 'report') {
 
 if ($page === 'qr') { render_header('QR utility'); ?><div class="page-head"><div><p class="eyebrow">Survey tools</p><h1>QR code generator</h1><p class="muted">Generate a scannable code for a Google Form or survey link. URLs are not stored.</p></div></div><form class="form-card qr-form" onsubmit="return makeQr(event)"><label>URL<input id="qr-url" type="url" placeholder="https://forms.google.com/..." required></label><label>Title / description<input id="qr-title"></label><button class="button primary">Generate QR code</button><div id="qr-result" class="qr-result" hidden><h2 id="qr-label"></h2><img id="qr-image" alt="Generated QR code"><a id="qr-download" class="button" download="survey-qr.png">Download</a></div></form><?php render_footer(); exit; }
 
-render_header('Dashboard'); $scope = $currentUser['role'] === 'student' ? 'WHERE assigned_student_id = ' . (int)$currentUser['id'] : ''; $total = query($conn, "SELECT COUNT(*) n FROM cases $scope")->fetch_assoc()['n']; $active = query($conn, "SELECT COUNT(*) n FROM cases $scope " . ($scope ? 'AND' : 'WHERE') . " status='Active'")->fetch_assoc()['n']; $completed = query($conn, "SELECT COUNT(*) n FROM cases $scope " . ($scope ? 'AND' : 'WHERE') . " status='Completed'")->fetch_assoc()['n']; $recent = query($conn, "SELECT id,case_code,client_name,updated_at FROM cases $scope ORDER BY updated_at DESC LIMIT 5"); ?><div class="page-head"><div><p class="eyebrow">Workspace overview</p><h1>Good day, <?= e(explode(' ', $currentUser['full_name'])[0]) ?>.</h1><p class="muted">A clear view of the records needing your attention.</p></div><a class="button primary" href="index.php?page=case-create">+ New case</a></div><div class="stats"><div><strong><?= $total ?></strong><span>Total cases</span></div><div><strong><?= $active ?></strong><span>Active</span></div><div><strong><?= $completed ?></strong><span>Completed</span></div></div><section class="panel"><div class="section-head"><h2>Recently updated</h2><a class="text-link" href="index.php?page=cases">View all cases</a></div><div class="recent-list"><?php while ($item=$recent->fetch_assoc()): ?><a href="index.php?page=case&id=<?= $item['id'] ?>"><span><strong><?= e($item['case_code']) ?></strong> <?= e($item['client_name']) ?></span><time><?= e(date('M j, Y', strtotime($item['updated_at']))) ?></time></a><?php endwhile; ?></div></section><?php render_footer();
+render_header('Dashboard');
+if ($currentUser['role'] === 'student') {
+	$total = query($conn, 'SELECT COUNT(*) n FROM cases WHERE assigned_student_id = ?', 'i', [$currentUser['id']])->fetch_assoc()['n'];
+	$active = query($conn, "SELECT COUNT(*) n FROM cases WHERE assigned_student_id = ? AND status = 'Active'", 'i', [$currentUser['id']])->fetch_assoc()['n'];
+	$completed = query($conn, "SELECT COUNT(*) n FROM cases WHERE assigned_student_id = ? AND status = 'Completed'", 'i', [$currentUser['id']])->fetch_assoc()['n'];
+	$recent = query($conn, 'SELECT id, case_code, client_name, updated_at FROM cases WHERE assigned_student_id = ? ORDER BY updated_at DESC LIMIT 5', 'i', [$currentUser['id']]);
+} else {
+	$total = query($conn, 'SELECT COUNT(*) n FROM cases')->fetch_assoc()['n'];
+	$active = query($conn, "SELECT COUNT(*) n FROM cases WHERE status = 'Active'")->fetch_assoc()['n'];
+	$completed = query($conn, "SELECT COUNT(*) n FROM cases WHERE status = 'Completed'")->fetch_assoc()['n'];
+	$recent = query($conn, 'SELECT id, case_code, client_name, updated_at FROM cases ORDER BY updated_at DESC LIMIT 5');
+}
+?><div class="page-head"><div><p class="eyebrow">Workspace overview</p><h1>Good day, <?= e(explode(' ', $currentUser['full_name'])[0]) ?>.</h1><p class="muted">A clear view of the records needing your attention.</p></div><a class="button primary" href="index.php?page=case-create">+ New case</a></div><div class="stats"><div><strong><?= $total ?></strong><span>Total cases</span></div><div><strong><?= $active ?></strong><span>Active</span></div><div><strong><?= $completed ?></strong><span>Completed</span></div></div><section class="panel"><div class="section-head"><h2>Recently updated</h2><a class="text-link" href="index.php?page=cases">View all cases</a></div><div class="recent-list"><?php while ($item=$recent->fetch_assoc()): ?><a href="index.php?page=case&id=<?= $item['id'] ?>"><span><strong><?= e($item['case_code']) ?></strong> <?= e($item['client_name']) ?></span><time><?= e(date('M j, Y', strtotime($item['updated_at']))) ?></time></a><?php endwhile; ?></div></section><?php render_footer();

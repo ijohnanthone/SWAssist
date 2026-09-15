@@ -34,7 +34,7 @@ function render_header(string $title): void
                     <a class="<?= $isActive(['qr']) ?>" aria-current="<?= $activePage === 'qr' ? 'page' : 'false' ?>" href="index.php?page=qr">QR utility</a>
                 <?php endif; ?>
             </nav>
-            <div class="sidebar-foot"><strong><?= e($currentUser['full_name']) ?></strong><small><?= e(ucfirst($currentUser['role'])) ?></small><a href="index.php?page=logout">Sign out</a></div>
+            <div class="sidebar-foot"><strong><?= e($currentUser['full_name']) ?></strong><small><?= e(ucfirst($currentUser['role'])) ?></small><form method="post" action="index.php?page=logout" class="logout-form"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><button type="submit" class="text-link">Sign out</button></form></div>
         </aside>
         <main class="main">
     <?php else: ?>

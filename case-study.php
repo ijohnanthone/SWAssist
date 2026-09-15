@@ -46,7 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $exception) {
         $conn->rollback();
         error_log('SWAssist case-study save failed: ' . $exception->getMessage());
-        throw $exception;
+        flash('error', 'The case study could not be saved. Please try again.');
+        redirect('index.php?page=case-study&id=' . $caseId);
     }
 }
 
